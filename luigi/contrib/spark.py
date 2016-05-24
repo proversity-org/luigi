@@ -1,10 +1,27 @@
+# -*- coding: utf-8 -*-
+#
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
 import datetime
 import logging
 import os
 import random
 import re
-import subprocess
 import signal
+import subprocess
 import sys
 import tempfile
 import time
@@ -13,7 +30,6 @@ import luigi
 import luigi.format
 import luigi.hdfs
 from luigi import configuration
-
 
 logger = logging.getLogger('luigi-interface')
 
@@ -36,6 +52,7 @@ hadoop-conf-dir: /etc/hadoop/conf
 
 
 class SparkRunContext(object):
+
     def __init__(self):
         self.app_id = None
 
@@ -66,6 +83,7 @@ class SparkRunContext(object):
 
 
 class SparkJobError(RuntimeError):
+
     def __init__(self, message, out=None, err=None):
         super(SparkJobError, self).__init__(message, out, err)
         self.message = message
@@ -89,7 +107,9 @@ class SparkJob(luigi.Task):
     temp_hadoop_output_file = None
 
     def requires_local(self):
-        ''' Default impl - override this method if you need any local input to be accessible in init() '''
+        """
+        Default impl - override this method if you need any local input to be accessible in init().
+        """
         return []
 
     def requires_hadoop(self):
@@ -130,7 +150,7 @@ class SparkJob(luigi.Task):
         for a in self.job_args():
             if a == self.output().path:
                 # pass temporary output path to job args
-                logger.info("Using temp path: {0} for path {1}".format(tmp_output.path, original_output_path))
+                logger.info('Using temp path: %s for path %s', tmp_output.path, original_output_path)
                 args += ['--args', tmp_output.path]
             else:
                 args += ['--args', str(a)]
@@ -155,7 +175,7 @@ class SparkJob(luigi.Task):
         spark_class = configuration.get_config().get('spark', 'spark-class')
 
         temp_stderr = tempfile.TemporaryFile()
-        logger.info('Running: %s %s' % (spark_class, ' '.join(args)))
+        logger.info('Running: %s %s', spark_class, ' '.join(args))
         proc = subprocess.Popen([spark_class] + args, stdout=subprocess.PIPE,
                                 stderr=temp_stderr, env=env, close_fds=True)
 
@@ -221,7 +241,9 @@ class Spark1xJob(luigi.Task):
                                   "containing job_class")
 
     def dependency_jars(self):
-        """Override to provide a list of dependency jars."""
+        """
+        Override to provide a list of dependency jars.
+        """
         return []
 
     def job_class(self):
@@ -267,7 +289,7 @@ class Spark1xJob(luigi.Task):
         args = map(str, args)
         env = os.environ.copy()
         temp_stderr = tempfile.TemporaryFile()
-        logger.info('Running: {0}'.format(repr(args)))
+        logger.info('Running: %s', repr(args))
         proc = subprocess.Popen(args, stdout=subprocess.PIPE,
                                 stderr=temp_stderr, env=env, close_fds=True)
         return_code, final_state, app_id = self.track_progress(proc)
@@ -282,10 +304,9 @@ class Spark1xJob(luigi.Task):
 
     def track_progress(self, proc):
         """
-        The Spark client currently outputs a multiline status to stdout every
-        second while the application is running. This instead captures status
-        data and updates a single line of output until the application
-        finishes.
+        The Spark client currently outputs a multiline status to stdout every second while the application is running.
+
+        This instead captures status data and updates a single line of output until the application finishes.
         """
         app_id = None
         app_status = 'N/A'
@@ -326,7 +347,6 @@ class Spark1xJob(luigi.Task):
         return proc.returncode, final_state, app_id
 
 
-
 class PySpark1xJob(Spark1xJob):
 
     num_executors = None
@@ -338,7 +358,9 @@ class PySpark1xJob(Spark1xJob):
         raise NotImplementedError("subclass should define Spark .py file")
 
     def py_files(self):
-        """Override to provide a list of py files."""
+        """
+        Override to provide a list of py files.
+        """
         return []
 
     def run(self):
@@ -361,13 +383,12 @@ class PySpark1xJob(Spark1xJob):
         args = map(str, args)
         env = os.environ.copy()
         temp_stderr = tempfile.TemporaryFile()
-        logger.info('Running: {0}'.format(repr(args)))
+        logger.info('Running: %s', repr(args))
         proc = subprocess.Popen(args, stdout=subprocess.PIPE,
                                 stderr=temp_stderr, env=env, close_fds=True)
         return_code, final_state, app_id = self.track_progress(proc)
         if final_state == 'FAILED':
-            raise SparkJobError('Spark job failed: see yarn logs for {0}'
-                                .format(app_id))
+            raise SparkJobError('Spark job failed: see yarn logs for %s', app_id)
         elif return_code != 0:
             temp_stderr.seek(0)
             errors = "".join(temp_stderr.readlines())

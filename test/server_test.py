@@ -1,16 +1,19 @@
-# Copyright (c) 2013 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 import unittest
 import urllib2
@@ -19,6 +22,7 @@ import luigi.server
 
 
 class ServerTestBase(unittest.TestCase):
+
     @classmethod
     def setUpClass(cls):
         # Pass IPv4 localhost to ensure that only a single address, and therefore single port, is bound
@@ -31,6 +35,7 @@ class ServerTestBase(unittest.TestCase):
 
 
 class ServerTest(ServerTestBase):
+
     def test_visualizer(self):
         uri = 'http://localhost:%d' % self._api_port
         req = urllib2.Request(uri)
@@ -43,7 +48,7 @@ class ServerTest(ServerTestBase):
         req = urllib2.Request(uri)
         try:
             response = urllib2.urlopen(req, timeout=10)
-        except urllib2.HTTPError, http_exc:
+        except urllib2.HTTPError as http_exc:
             pass
 
         self.assertEqual(http_exc.code, 404)
@@ -57,4 +62,3 @@ class ServerTest(ServerTestBase):
 
 if __name__ == '__main__':
     unittest.main()
-

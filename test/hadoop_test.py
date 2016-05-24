@@ -1,39 +1,44 @@
-# Copyright (c) 2012 Spotify AB
+# -*- coding: utf-8 -*-
 #
-# Licensed under the Apache License, Version 2.0 (the "License"); you may not
-# use this file except in compliance with the License. You may obtain a copy of
-# the License at
+# Copyright 2012-2015 Spotify AB
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
 # http://www.apache.org/licenses/LICENSE-2.0
 #
 # Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-# License for the specific language governing permissions and limitations under
-# the License.
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
-import mock
 import os
+import StringIO
+import subprocess
 import sys
 import unittest
-import subprocess
+
 import luigi
 import luigi.hadoop
 import luigi.hdfs
 import luigi.mrrunner
-from luigi.mock import MockFile
-import StringIO
 import luigi.notifications
-from nose.plugins.attrib import attr
 import minicluster
+import mock
+from luigi.mock import MockFile
+from nose.plugins.attrib import attr
 
 luigi.notifications.DEBUG = True
 File = MockFile
 
 luigi.hadoop.attach(minicluster)
 
+
 class OutputMixin(luigi.Task):
-    use_hdfs = luigi.BooleanParameter(default=False)
+    use_hdfs = luigi.BoolParameter(default=False)
 
     def get_output(self, fn):
         if self.use_hdfs:
@@ -43,6 +48,7 @@ class OutputMixin(luigi.Task):
 
 
 class HadoopJobTask(luigi.hadoop.JobTask, OutputMixin):
+
     def job_runner(self):
         if self.use_hdfs:
             return minicluster.MiniClusterHadoopJobRunner()
@@ -51,6 +57,7 @@ class HadoopJobTask(luigi.hadoop.JobTask, OutputMixin):
 
 
 class Words(OutputMixin):
+
     def output(self):
         return self.get_output('words')
 
@@ -62,6 +69,7 @@ class Words(OutputMixin):
 
 
 class WordCountJob(HadoopJobTask):
+
     def mapper(self, line):
         for word in line.strip().split():
             self.incr_counter('word', word, 1)
@@ -78,6 +86,7 @@ class WordCountJob(HadoopJobTask):
 
 
 class WordFreqJob(HadoopJobTask):
+
     def init_local(self):
         self.n = 0
         for line in self.input_local().open('r'):
@@ -105,6 +114,7 @@ class WordFreqJob(HadoopJobTask):
 
 
 class MapOnlyJob(HadoopJobTask):
+
     def mapper(self, line):
         for word in line.strip().split():
             yield (word,)
@@ -117,6 +127,7 @@ class MapOnlyJob(HadoopJobTask):
 
 
 class UnicodeJob(HadoopJobTask):
+
     def mapper(self, line):
         yield u'test', 1
         yield 'test', 1
@@ -136,6 +147,7 @@ class FailingJobException(Exception):
 
 
 class FailingJob(HadoopJobTask):
+
     def init_hadoop(self):
         raise FailingJobException('failure')
 
@@ -152,6 +164,7 @@ def read_wordcount_output(p):
 
 
 class CommonTests(object):
+
     @staticmethod
     def test_run(test_case):
         job = WordCountJob(use_hdfs=test_case.use_hdfs)
@@ -221,6 +234,7 @@ class MapreduceLocalTest(unittest.TestCase):
 
 @attr('minicluster')
 class MapreduceIntegrationTest(minicluster.MiniClusterTestCase):
+
     """ Uses the Minicluster functionality to test this against Hadoop """
     use_hdfs = True
 
@@ -239,7 +253,9 @@ class MapreduceIntegrationTest(minicluster.MiniClusterTestCase):
     def test_failing_job(self):
         CommonTests.test_failing_job(self)
 
+
 class CreatePackagesArchive(unittest.TestCase):
+
     def setUp(self):
         sys.path.append(os.path.join('test', 'create_packages_archive_root'))
 
