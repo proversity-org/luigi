@@ -30,7 +30,6 @@ import signal
 from rpc import RemoteSchedulerResponder
 import task_history
 import logging
-import warnings
 logger = logging.getLogger("luigi.server")
 
 
@@ -40,6 +39,14 @@ def _create_scheduler():
     remove_delay = config.getfloat('scheduler', 'remove-delay', 600.0)
     worker_disconnect_delay = config.getfloat('scheduler', 'worker-disconnect-delay', 60.0)
     state_path = config.get('scheduler', 'state-path', '/var/lib/luigi-server/state.pickle')
+
+    # Jobs are disabled if we see more than disable_failures failures in disable_window seconds.
+    # These disables last for disable_persist seconds.
+    disable_window = config.getint('scheduler', 'disable-window-seconds', 3600)
+    disable_failures = config.getint('scheduler', 'disable-num-failures', None)
+    disable_persist = config.getint('scheduler', 'disable-persist-seconds', 86400)
+    max_shown_tasks = config.getint('scheduler', 'max-shown-tasks', 100000)
+
     resources = config.getintdict('resources')
     if config.getboolean('scheduler', 'record_task_history', False):
         import db_task_history  # Needs sqlalchemy, thus imported here
@@ -48,7 +55,8 @@ def _create_scheduler():
         task_history_impl = task_history.NopHistory()
     return scheduler.CentralPlannerScheduler(
         retry_delay, remove_delay, worker_disconnect_delay, state_path, task_history_impl,
-        resources)
+        resources, disable_persist, disable_window, disable_failures, max_shown_tasks,
+    )
 
 
 class RPCHandler(tornado.web.RequestHandler):
@@ -168,7 +176,10 @@ def run(api_port=8082, address=None, scheduler=None, responder=None):
 
     signal.signal(signal.SIGINT, shutdown_handler)
     signal.signal(signal.SIGTERM, shutdown_handler)
-    signal.signal(signal.SIGQUIT, shutdown_handler)
+    if os.name == 'nt':
+            signal.signal(signal.SIGBREAK, shutdown_handler)
+    else:
+            signal.signal(signal.SIGQUIT, shutdown_handler)
     atexit.register(shutdown_handler)
 
     logger.info("Scheduler starting up")

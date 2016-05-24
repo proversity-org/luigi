@@ -77,23 +77,17 @@ class CmdlineTest(unittest.TestCase):
     def setUp(self):
         global File
         File = MockFile
-        MockFile._file_contents.clear()
-
-    def test_expose_deprecated(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            luigi.expose(SomeTask)
-            self.assertEqual(w[-1].category, DeprecationWarning)
+        MockFile.fs.clear()
 
     @mock.patch("logging.getLogger")
     def test_cmdline_main_task_cls(self, logger):
         luigi.run(['--local-scheduler', '--no-lock', '--n', '100'], main_task_cls=SomeTask)
-        self.assertEqual(dict(MockFile._file_contents), {'/tmp/test_100': 'done'})
+        self.assertEqual(dict(MockFile.fs.get_all_data()), {'/tmp/test_100': 'done'})
 
     @mock.patch("logging.getLogger")
     def test_cmdline_other_task(self, logger):
         luigi.run(['--local-scheduler', '--no-lock', 'SomeTask', '--n', '1000'])
-        self.assertEqual(dict(MockFile._file_contents), {'/tmp/test_1000': 'done'})
+        self.assertEqual(dict(MockFile.fs.get_all_data()), {'/tmp/test_1000': 'done'})
 
     @mock.patch("logging.getLogger")
     def test_cmdline_ambiguous_class(self, logger):

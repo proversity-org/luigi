@@ -17,7 +17,6 @@ import urllib2
 import logging
 import json
 import time
-import warnings
 from scheduler import Scheduler, PENDING
 import configuration
 
@@ -93,14 +92,16 @@ class RemoteScheduler(Scheduler):
         # just one attemtps, keep-alive thread will keep trying anyway
         self._request('/api/ping', {'worker': worker}, attempts=1)
 
-    def add_task(self, worker, task_id, status=PENDING, runnable=False, deps=None, expl=None,
-                 resources={}, priority=0, family='', params={}):
+    def add_task(self, worker, task_id, status=PENDING, runnable=False,
+                 deps=None, new_deps=None, expl=None, resources={},priority=0,
+                 family='', params={}):
         self._request('/api/add_task', {
             'task_id': task_id,
             'worker': worker,
             'status': status,
             'runnable': runnable,
             'deps': deps,
+            'new_deps': new_deps,
             'expl': expl,
             'resources': resources,
             'priority': priority,
@@ -135,6 +136,9 @@ class RemoteScheduler(Scheduler):
     def task_list(self, status, upstream_status):
         return self._request('/api/task_list', {'status': status, 'upstream_status': upstream_status})
 
+    def worker_list(self):
+        return self._request('/api/worker_list', {})
+
     def task_search(self, task_str):
         return self._request('/api/task_search', {'task_str': task_str})
 
@@ -159,10 +163,11 @@ class RemoteSchedulerResponder(object):
     def __init__(self, scheduler):
         self._scheduler = scheduler
 
-    def add_task(self, worker, task_id, status, runnable, deps, expl, resources=None, priority=0,
-                 family='', params={}, **kwargs):
+    def add_task(self, worker, task_id, status, runnable, deps, new_deps, expl,
+                 resources=None, priority=0, family='', params={}, **kwargs):
         return self._scheduler.add_task(
-            worker, task_id, status, runnable, deps, expl, resources, priority, family, params)
+            worker, task_id, status, runnable, deps, new_deps, expl,
+            resources, priority, family, params)
 
     def add_worker(self, worker, info, **kwargs):
         return self._scheduler.add_worker(worker, info)
@@ -186,6 +191,9 @@ class RemoteSchedulerResponder(object):
 
     def task_list(self, status, upstream_status, **kwargs):
         return self._scheduler.task_list(status, upstream_status)
+
+    def worker_list(self, **kwargs):
+        return self._scheduler.worker_list()
 
     def task_search(self, task_str, **kwargs):
         return self._scheduler.task_search(task_str)

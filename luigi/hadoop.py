@@ -19,7 +19,6 @@ import datetime
 import subprocess
 import tempfile
 from itertools import groupby
-from operator import itemgetter
 import pickle
 import binascii
 import logging
@@ -378,13 +377,13 @@ class HadoopJobRunner(JobRunner):
             job_output_path = output_final + '-temp-' + datetime.datetime.now().isoformat().replace(':', '-')
             tmp_target = luigi.hdfs.HdfsTarget(job_output_path, is_tmp=True)
 
-        arglist = [luigi.hdfs.load_hadoop_cmd(), 'jar', self.streaming_jar]
+        arglist = luigi.hdfs.load_hadoop_cmd() + ['jar', self.streaming_jar]
 
         # 'libjars' is a generic option, so place it first
         libjars = [libjar for libjar in self.libjars]
 
         for libjar in self.libjars_in_hdfs:
-            subprocess.call([luigi.hdfs.load_hadoop_cmd(), 'fs', '-get', libjar, self.tmp_dir])
+            subprocess.call(luigi.hdfs.load_hadoop_cmd() + ['fs', '-get', libjar, self.tmp_dir])
             libjars.append(os.path.join(self.tmp_dir, os.path.basename(libjar)))
 
         if libjars:
@@ -429,11 +428,13 @@ class HadoopJobRunner(JobRunner):
             arglist += ['-inputformat', self.input_format]
 
         for target in luigi.task.flatten(job.input_hadoop()):
-            assert isinstance(target, luigi.hdfs.HdfsTarget)
+            if not isinstance(target, luigi.hdfs.HdfsTarget):
+                raise TypeError('target must be an HdfsTarget')
             arglist += ['-input', target.path]
 
-        assert isinstance(job.output(), luigi.hdfs.HdfsTarget)
-        arglist += ['-output', job_output_path]
+        if not isinstance(job.output(), luigi.hdfs.HdfsTarget):
+            raise TypeError('outout must be an HdfsTarget')
+        arglist += ['-output', output_tmp_fn]
 
         # submit job
         create_packages_archive(packages, self.tmp_dir + '/packages.tar')
@@ -442,9 +443,8 @@ class HadoopJobRunner(JobRunner):
 
         run_and_track_hadoop_job(arglist)
 
-        # rename temporary work directory to given output
-        if tmp_target:
-            tmp_target.move(output_final, raise_if_exists=True)
+        tmp_target.move(output_final, raise_if_exists=True)
+
         self.finish()
 
     def finish(self):

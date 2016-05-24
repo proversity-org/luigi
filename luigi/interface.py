@@ -27,7 +27,6 @@ import re
 import argparse
 import sys
 import os
-
 from task import Register
 
 
@@ -53,11 +52,6 @@ def setup_interface_logging(conf_file=None):
     setup_interface_logging.has_run = True
 
 
-def get_config():
-    warnings.warn('Use luigi.configuration.get_config() instead')
-    return configuration.get_config()
-
-
 class EnvironmentParamsContainer(task.Task):
     ''' Keeps track of a bunch of environment params.
 
@@ -78,10 +72,6 @@ class EnvironmentParamsContainer(task.Task):
         is_global=True, default=8082,
         description='Port of remote scheduler api process',
         config_path=dict(section='core', name='default-scheduler-port'))
-    lock = parameter.BooleanParameter(
-        is_global=True, default=False,
-        description='(Deprecated, replaced by no_lock)'
-                    'Do not run if similar process is already running')
     lock_size = parameter.IntParameter(
         is_global=True, default=1,
         description="Maximum number of workers running the same command")
@@ -101,6 +91,11 @@ class EnvironmentParamsContainer(task.Task):
     module = parameter.Parameter(
         is_global=True, default=None,
         description='Used for dynamic loading of modules') # see DynamicArgParseInterface
+    parallel_scheduling = parameter.BooleanParameter(
+        is_global=True, default=False,
+        description='Use multiprocessing to do scheduling in parallel.',
+        config_path={'section': 'core', 'name': 'parallel-scheduling'},
+    )
 
     @classmethod
     def env_params(cls, override_defaults={}):
@@ -110,20 +105,6 @@ class EnvironmentParamsContainer(task.Task):
                 param_obj.set_global(override_defaults[param_name])
 
         return cls()  # instantiate an object with the global params set on it
-
-
-def expose(cls):
-    warnings.warn('expose is no longer used, everything is autoexposed', DeprecationWarning)
-    return cls
-
-
-def expose_main(cls):
-    warnings.warn('expose_main is no longer supported, use luigi.run(..., main_task_cls=cls) instead', DeprecationWarning)
-    return cls
-
-
-def reset():
-    warnings.warn('reset is no longer supported')
 
 
 class WorkerSchedulerFactory(object):
@@ -164,14 +145,6 @@ class Interface(object):
                 'core', 'no_configure_logging', False):
             setup_interface_logging(logging_conf)
 
-        if env_params.lock:
-            warnings.warn(
-                "The --lock flag is deprecated and will be removed."
-                "Locking is now the default behavior."
-                "Use --no-lock to override to not use lock",
-                DeprecationWarning
-            )
-
         if (not env_params.no_lock and
                 not(lock.acquire_for(env_params.lock_pid_dir, env_params.lock_size))):
             sys.exit(1)
@@ -188,7 +161,7 @@ class Interface(object):
 
         success = True
         for t in tasks:
-            success &= w.add(t)
+            success &= w.add(t, env_params.parallel_scheduling)
         logger = logging.getLogger('luigi-interface')
         logger.info('Done scheduling tasks')
         success &= w.run()
@@ -237,34 +210,14 @@ class ArgParseInterface(Interface):
     ''' Takes the task as the command, with parameters specific to it
     '''
     @classmethod
-    def add_parameter(cls, parser, param_name, param, prefix=None):
-        description = []
-        if prefix:
-            description.append('%s.%s' % (prefix, param_name))
-        else:
-            description.append(param_name)
-        if param.description:
-            description.append(param.description)
-        if param.has_value:
-            description.append(" [default: %s]" % (param.value,))
-
-        if param.is_list:
-            action = "append"
-        elif param.is_boolean:
-            action = "store_true"
-        else:
-            action = "store"
-        parser.add_argument('--' + param_name.replace('_', '-'), help=' '.join(description), default=None, action=action)
-
-    @classmethod
     def add_task_parameters(cls, parser, task_cls):
         for param_name, param in task_cls.get_nonglobal_params():
-            cls.add_parameter(parser, param_name, param, task_cls.task_family)
+            param.add_to_cmdline_parser(parser, param_name, task_cls.task_family)
 
     @classmethod
     def add_global_parameters(cls, parser):
         for param_name, param in Register.get_global_params():
-            cls.add_parameter(parser, param_name, param)
+            param.add_to_cmdline_parser(parser, param_name)
 
     def parse_task(self, cmdline_args=None, main_task_cls=None):
         parser = ErrorWrappedArgumentParser()
@@ -295,10 +248,7 @@ class ArgParseInterface(Interface):
         if main_task_cls:
             task_cls = main_task_cls
         else:
-            task_cls = Register.get_reg()[args.command]
-
-        if task_cls == Register.AMBIGUOUS_CLASS:
-            raise Exception('%s is ambigiuous' % args.command)
+            task_cls = Register.get_task_cls(args.command)
 
         # Notice that this is not side effect free because it might set global params
         task = task_cls.from_str_params(params, Register.get_global_params())
@@ -362,34 +312,15 @@ class OptParseInterface(Interface):
         global_params = list(Register.get_global_params())
 
         parser = PassThroughOptionParser()
-        tasks_str = '/'.join(sorted([name for name in Register.get_reg()]))
 
         def add_task_option(p):
             if main_task_cls:
-                p.add_option('--task', help='Task to run (' + tasks_str + ') [default: %default]', default=main_task_cls.task_family)
+                p.add_option('--task', help='Task to run (one of ' + Register.tasks_str() + ') [default: %default]', default=main_task_cls.task_family)
             else:
-                p.add_option('--task', help='Task to run (%s)' % tasks_str)
-
-        def _add_parameter(parser, param_name, param):
-            description = [param_name]
-            if param.description:
-                description.append(param.description)
-            if param.has_value:
-                description.append(" [default: %s]" % (param.value,))
-
-            if param.is_list:
-                action = "append"
-            elif param.is_boolean:
-                action = "store_true"
-            else:
-                action = "store"
-            parser.add_option('--' + param_name.replace('_', '-'),
-                              help=' '.join(description),
-                              default=None,
-                              action=action)
+                p.add_option('--task', help='Task to run (one of %s)' % Register.tasks_str())
 
         for param_name, param in global_params:
-            _add_parameter(parser, param_name, param)
+            param.add_to_cmdline_parser(parser, param_name, optparse=True)
 
         add_task_option(parser)
         options, args = parser.parse_args(args=cmdline_args)
@@ -401,21 +332,16 @@ class OptParseInterface(Interface):
             parser = optparse.OptionParser()
         add_task_option(parser)
 
-        if task_cls_name not in Register.get_reg():
-            raise Exception('Error: %s is not a valid tasks (must be %s)' % (task_cls_name, tasks_str))
+        task_cls = Register.get_task_cls(task_cls_name)
 
         # Register all parameters as a big mess
-        task_cls = Register.get_reg()[task_cls_name]
-        if task_cls == Register.AMBIGUOUS_CLASS:
-            raise Exception('%s is ambiguous' % task_cls_name)
-
         params = task_cls.get_nonglobal_params()
 
         for param_name, param in global_params:
-            _add_parameter(parser, param_name, param)
+            param.add_to_cmdline_parser(parser, param_name, optparse=True)
 
         for param_name, param in params:
-            _add_parameter(parser, param_name, param)
+            param.add_to_cmdline_parser(parser, param_name, optparse=True)
 
         # Parse and run
         options, args = parser.parse_args(args=cmdline_args)
@@ -430,9 +356,11 @@ class OptParseInterface(Interface):
         return [task]
 
 
-class LuigiConfigParser(configuration.LuigiConfigParser):
-    ''' Deprecated class, use configuration.LuigiConfigParser instead. Left for backwards compatibility '''
-    pass
+def load_task(module, task_name, params_str):
+    """ Imports task dynamically given a module and a task name"""
+    __import__(module)
+    task_cls = Register.get_task_cls(task_name)
+    return task_cls.from_str_params(params_str)
 
 
 def run(cmdline_args=None, existing_optparse=None, use_optparse=False, main_task_cls=None, worker_scheduler_factory=None, use_dynamic_argparse=False):
@@ -463,7 +391,8 @@ def build(tasks, worker_scheduler_factory=None, **env_params):
     the identical process lock. Otherwise, `build` would only be
     callable once from each process.
     '''
-    if "no_lock" not in env_params and "lock" not in env_params:
+    if "no_lock" not in env_params:
+        # TODO(erikbern): should we really override args here?
         env_params["no_lock"] = True
-        env_params["lock"] = False
+
     Interface.run(tasks, worker_scheduler_factory, env_params)

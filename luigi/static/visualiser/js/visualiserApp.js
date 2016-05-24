@@ -1,6 +1,7 @@
 function visualiserApp(luigi) {
     var templates = {};
     var invertDependencies = false;
+    var typingTimer = 0;
 
     function loadTemplates() {
         $("script[type='text/template']").each(function(i, element) {
@@ -19,20 +20,25 @@ function visualiserApp(luigi) {
         return dateObject.getHours() + ":" + dateObject.getMinutes() + ":" + dateObject.getSeconds();
     }
 
-    function taskToDisplayTask(task) {
+    function taskToDisplayTask(showWorker, task) {
         var taskIdParts = /([A-Za-z0-9_]*)\((.*)\)/.exec(task.taskId);
         var taskName = taskIdParts[1];
         var taskParams = taskIdParts[2];
         var displayTime = new Date(Math.floor(task.start_time*1000)).toLocaleString();
         if (task.status == "RUNNING" && "time_running" in task) {
-            var current_time = new Date().getTime()
-            var minutes_running = Math.round((current_time - task.time_running * 1000) / 1000 / 60)
-            displayTime += " | " + minutes_running + " minutes"
+            var current_time = new Date().getTime();
+            var minutes_running = Math.round((current_time - task.time_running * 1000) / 1000 / 60);
+            displayTime += " | " + minutes_running + " minutes";
+            if (showWorker && "worker_running" in task) {
+              displayTime += " (" + task.worker_running + ")";
+            }
         }
         return {
             taskId: task.taskId,
             taskName: taskName,
             taskParams: taskParams,
+            priority: task.priority,
+            resources: JSON.stringify(task.resources),
             displayTime: displayTime,
             displayTimestamp : task.start_time,
             trackingUrl: task.trackingUrl,
@@ -62,11 +68,22 @@ function visualiserApp(luigi) {
     }
 
     function renderTasks(tasks) {
-        var displayTasks = tasks.map(taskToDisplayTask);
+        var displayTasks = tasks.map($.proxy(taskToDisplayTask, null, true));
         displayTasks.sort(function(a,b) { return b.displayTimestamp - a.displayTimestamp; });
         var tasksByFamily = entryList(indexByProperty(displayTasks, "taskName"));
         tasksByFamily.sort(function(a,b) { return a.key.localeCompare(b.key); });
         return renderTemplate("rowTemplate", {tasks: tasksByFamily});
+    }
+
+    function processWorker(worker) {
+        worker.tasks = worker.running.map($.proxy(taskToDisplayTask, null, false));
+        worker.start_time = new Date(worker.started * 1000).toLocaleString();
+        worker.active = new Date(worker.last_active * 1000).toLocaleString();
+        return worker;
+    }
+
+    function renderWorkers(workers) {
+        return renderTemplate("workerTemplate", {"workers": workers.map(processWorker)});
     }
 
     function switchTab(tabId) {
@@ -83,7 +100,9 @@ function visualiserApp(luigi) {
 
     function processHashChange() {
         var hash = location.hash;
-        if (hash) {
+        if (hash == "#w") {
+            switchTab("workerList");
+        } else if (hash) {
             var taskId = hash.substr(1);
             $("#graphContainer").hide();
             $("#graphPlaceholder svg").empty();
@@ -100,8 +119,8 @@ function visualiserApp(luigi) {
                       $("#graphContainer").show();
                       bindGraphEvents();
                     } else {
-                      $("#searchError").addClass("alert alert-error")
-                      $("#searchError").append("Couldn't find task " + taskId)
+                      $("#searchError").addClass("alert alert-error");
+                      $("#searchError").append("Couldn't find task " + taskId);
                     }
                 }
                 if (invertDependencies) {
@@ -165,32 +184,104 @@ function visualiserApp(luigi) {
         });
     }
 
+    function getTaskList(id, tasks, expand) {
+        if (tasks.length == 1 && typeof(tasks[0]) === "number") {
+            var length = tasks[0];
+            var rendered = renderTemplate("rowCountTemplate", {'num_tasks': length});
+            $(id).parent().addClass('emptyTaskGroup');
+        } else {
+            var length = tasks.length;
+            var rendered = renderTasks(tasks);
+        }
+        $(id).append(rendered);
+        $(id).prev("h3").append(" (" + length + ")");
+        bindTaskEvents(id, expand);
+        filterTasks();
+    }
+
+    function filterTasks() {
+        inputVal = $('#filter-input').val();
+        if (inputVal) {
+            arr = inputVal.split(" ");
+            // hide all columns first
+            $('#taskList .taskRow').addClass('hidden');
+            $('#taskList .taskRow').parent().parent().addClass('hidden');
+
+            // unhide columns that matches filter
+            attrSelector = arr.map(function(a) {
+                return a ? '[data-task-id*=' + a + ']' : '';
+            }).join("");
+            selector = '.taskRow' + attrSelector;
+            $(selector).removeClass('hidden');
+            $(selector).parent().parent().removeClass('hidden');
+        } else {
+            $('#taskList .taskRow').removeClass('hidden');
+            $('#taskList .taskRow').parent().parent().removeClass('hidden');
+        }
+
+        updateCount();
+    }
+
+    function updateCount() {
+        taskGroups = $('#taskList .taskGroup:not(.emptyTaskGroup)');
+        for (i=0; i<taskGroups.length; i++) {
+            groupCount = 0;
+
+            // update each task family
+            taskFamilies = $(taskGroups[i]).find('.taskFamily:visible');
+            for (j=0; j<taskFamilies.length; j++) {
+                cnt = $(taskFamilies[j]).find('.taskRow:not(.hidden)').length;
+                groupCount += cnt;
+                node = $(taskFamilies[j]).find(".badge-important");
+                node.text(cnt);
+            }
+
+            // update task group
+            newText = $(taskGroups[i]).find('h3').text().replace(/\d+/, groupCount);
+            $(taskGroups[i]).find('h3').text(newText);
+        }
+    }
+
     $(document).ready(function() {
         loadTemplates();
 
+        $('#filter-input').bind("keyup paste", function() {
+            clearTimeout(typingTimer);
+            if ($('#filter-input').val) {
+                typingTimer = setTimeout(filterTasks, 300);
+            }
+        });
+
+        luigi.getWorkerList(function(workers) {
+            $("#workerList").append(renderWorkers(workers));
+        });
+
         luigi.getRunningTaskList(function(runningTasks) {
-            $("#runningTasks").append(renderTasks(runningTasks));
-            bindTaskEvents("#runningTasks", true);
+            getTaskList("#runningTasks", runningTasks, true);
         });
 
         luigi.getFailedTaskList(function(failedTasks) {
-            $("#failedTasks").append(renderTasks(failedTasks));
-            bindTaskEvents("#failedTasks");
+            getTaskList("#failedTasks", failedTasks);
         });
 
         luigi.getUpstreamFailedTaskList(function(upstreamFailedTasks) {
-            $("#upstreamFailedTasks").append(renderTasks(upstreamFailedTasks));
-            bindTaskEvents("#upstreamFailedTasks");
+            getTaskList("#upstreamFailedTasks", upstreamFailedTasks);
+        });
+
+        luigi.getDisabledTaskList(function(disabledTasks) {
+            getTaskList("#disabledTasks", disabledTasks);
+        });
+
+        luigi.getUpstreamDisabledTaskList(function(upstreamDisabledTasks) {
+            getTaskList("#upstreamDisabledTasks", upstreamDisabledTasks);
         });
 
         luigi.getPendingTaskList(function(pendingTasks) {
-            $("#pendingTasks").append(renderTasks(pendingTasks));
-            bindTaskEvents("#pendingTasks");
+            getTaskList("#pendingTasks", pendingTasks);
         });
 
         luigi.getDoneTaskList(function(doneTasks) {
-            $("#doneTasks").append(renderTasks(doneTasks));
-            bindTaskEvents("#doneTasks");
+            getTaskList("#doneTasks", doneTasks);
         });
 
         bindListEvents();

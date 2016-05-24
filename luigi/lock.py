@@ -23,6 +23,7 @@ def getpcmd(pid):
     p = os.popen(cmd, 'r')
     return p.readline().strip()
 
+
 def get_info(pid_dir):
     # Check the name and pid of this process
     my_pid = os.getpid()
@@ -31,6 +32,7 @@ def get_info(pid_dir):
     pid_file = os.path.join(pid_dir, hashlib.md5(my_cmd).hexdigest()) + '.pid'
 
     return my_pid, my_cmd, pid_file
+
 
 def acquire_for(pid_dir, num_available=1):
     ''' Makes sure the process is only run once at the same time with the same name.
@@ -71,7 +73,11 @@ def acquire_for(pid_dir, num_available=1):
         f.writelines('%s\n' % (pid, ) for pid in filter(pid_cmds.__getitem__, pids))
 
     # Make the file writable by all
-    s = os.stat(pid_file)
-    os.chmod(pid_file, s.st_mode | 0777)
+    if os.name == 'nt':
+        pass
+    else:
+        s = os.stat(pid_file)
+        if os.getuid() == s.st_uid:
+            os.chmod(pid_file, s.st_mode | 0777)
 
     return True
