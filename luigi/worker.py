@@ -86,7 +86,7 @@ class TaskProcess(multiprocessing.Process):
         except BaseException as ex:
             status = FAILED
             logger.exception("[pid %s] Worker %s failed    %s", os.getpid(), self.worker_id, self.task)
-            error_message = self.task.on_failure(ex)
+            error_message = notifications.wrap_traceback(self.task.on_failure(ex))
             self.task.trigger_event(Event.FAILURE, self.task, ex)
             subject = "Luigi: %s FAILED" % self.task
             notifications.send_error_email(subject, error_message)
@@ -217,11 +217,13 @@ class Worker(object):
 
     def _email_complete_error(self, task, formatted_traceback):
           # like logger.exception but with WARNING level
+        formatted_traceback = notifications.wrap_traceback(formatted_traceback)
         subject = "Luigi: {task} failed scheduling".format(task=task)
         message = "Will not schedule {task} or any dependencies due to error in complete() method:\n{traceback}".format(task=task, traceback=formatted_traceback)
         notifications.send_error_email(subject, message)
 
     def _email_unexpected_error(self, task, formatted_traceback):
+        formatted_traceback = notifications.wrap_traceback(formatted_traceback)
         subject = "Luigi: Framework error while scheduling {task}".format(task=task)
         message = "Luigi framework error:\n{traceback}".format(traceback=formatted_traceback)
         notifications.send_error_email(subject, message)
@@ -304,6 +306,7 @@ class Worker(object):
         self._scheduled_tasks[task.task_id] = task
         self._scheduler.add_task(self._id, task.task_id, status=status,
                                  deps=deps, runnable=runnable, priority=task.priority,
+                                 resources=task.process_resources(),
                                  params=task.to_str_params(),
                                  family=task.task_family)
 
@@ -388,6 +391,7 @@ class Worker(object):
 
         self._scheduler.add_task(self._id, task.task_id, status=status,
                                  expl=error_message, runnable=None,
+                                 resources=task.process_resources(),
                                  params=task.to_str_params(),
                                  family=task.task_family)
 
