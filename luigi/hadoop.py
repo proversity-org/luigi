@@ -142,7 +142,8 @@ def create_packages_archive(packages, filename):
 
         n = package.__name__.replace(".", "/")
 
-        if hasattr(package, "__path__"):
+        # FIX: Check for valid package path to avoid IndexError: list index out of range (Fixed properly in luigi>=1.2.0)
+        if hasattr(package, "__path__") and len(package.__path__) > 0:
             # TODO: (BUG) picking only the first path does not
             # properly deal with namespaced packages in different
             # directories
