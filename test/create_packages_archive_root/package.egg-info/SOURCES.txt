@@ -1,0 +1,11 @@
+package/__init__.py
+package/submodule.py
+package/submodule_with_absolute_import.py
+package/submodule_without_imports.py
+package/subpackage/__init__.py
+package/subpackage/submodule.py
+package.egg-info/PKG-INFO
+package.egg-info/SOURCES.txt
+package.egg-info/dependency_links.txt
+package.egg-info/installed-files.txt
+package.egg-info/top_level.txt

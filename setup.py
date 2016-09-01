@@ -47,6 +47,9 @@ setup(
     package_data={
         'luigi': luigi_package_data
     },
+    install_requires={
+        'distlib==0.2.2'
+    },
     scripts=[
         'bin/luigid',
         'bin/luigi'

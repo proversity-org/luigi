@@ -39,6 +39,7 @@ import glob
 logger = logging.getLogger('luigi-interface')
 
 _attached_packages = []
+_file_path_to_package_meta_path = {}
 
 
 def attach(*packages):
@@ -78,13 +79,50 @@ def get_extra_files(extra_files):
     return result
 
 
+def clear_package_metadata_paths():
+    """Remove cached package metadata paths, for testing."""
+    keylist = _file_path_to_package_meta_path.keys()
+    for key in keylist:
+        del _file_path_to_package_meta_path[key]
+
+
+def get_package_metadata_paths():
+    from distlib.database import DistributionPath
+
+    if len(_file_path_to_package_meta_path) > 0:
+        return _file_path_to_package_meta_path
+
+    dist_path = DistributionPath(include_egg=True)
+    for distribution in dist_path.get_distributions():
+        metadata_path = distribution.path
+        logger.debug("mapping installed files for distribution at %s", metadata_path)
+        for installed_file_path, _hash, _size in distribution.list_installed_files():
+            absolute_installed_file_path = installed_file_path
+            if not os.path.isabs(installed_file_path):
+                absolute_installed_file_path = os.path.join(os.path.dirname(metadata_path), installed_file_path)
+            normalized_file_path = os.path.realpath(absolute_installed_file_path)
+            _file_path_to_package_meta_path[normalized_file_path] = metadata_path
+
+    return _file_path_to_package_meta_path
+
+
 def create_packages_archive(packages, filename):
     """Create a tar archive which will contain the files for the packages listed in packages. """
     import tarfile
     tar = tarfile.open(filename, "w")
 
+    package_metadata_paths = get_package_metadata_paths()
+    metadata_to_add = set()
+
     def add(src, dst):
         logger.debug('adding to tar: %s -> %s', src, dst)
+
+        # Ensure any entry points and other egg-info metadata is also transmitted along with
+        # this file. If it is associated with any egg-info directories, ship them too.
+        metadata_path = package_metadata_paths.get(os.path.realpath(src))
+        if metadata_path:
+            metadata_to_add.add(metadata_path)
+
         tar.add(src, dst)
 
     def add_files_for_package(sub_package_path, root_package_path, root_package_name):
@@ -129,15 +167,6 @@ def create_packages_archive(packages, filename):
 
                 add_files_for_package(p, p, n)
 
-                # include egg-info directories that are parallel:
-                for egg_info_path in glob.glob(p + '*.egg-info'):
-                    logger.debug(
-                        'Adding package metadata to archive for "%s" found at "%s"',
-                        package.__name__,
-                        egg_info_path
-                    )
-                    add_files_for_package(egg_info_path, p, n)
-
         else:
             f = package.__file__
             if f.endswith("pyc"):
@@ -146,6 +175,16 @@ def create_packages_archive(packages, filename):
                 add(dereference(f), os.path.basename(f))
             else:
                 add(dereference(f), n + ".py")
+
+    # Add any egg-info and dist-info directories that are needed by the modules
+    # and packages that are included in this tarball.
+    for metadata_path in metadata_to_add:
+        logger.debug(
+            'Adding package metadata to archive found at "%s"',
+            metadata_path
+        )
+        tar.add(metadata_path, os.path.basename(metadata_path))
+
     tar.close()
 
 

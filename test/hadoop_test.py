@@ -265,6 +265,7 @@ class MrrunnerTest(unittest.TestCase):
 class CreatePackagesArchive(unittest.TestCase):
     def setUp(self):
         sys.path.append(os.path.join('test', 'create_packages_archive_root'))
+        luigi.hadoop.clear_package_metadata_paths()
 
     def tearDown(self):
         sys.path.remove(os.path.join('test', 'create_packages_archive_root'))
@@ -273,6 +274,11 @@ class CreatePackagesArchive(unittest.TestCase):
         add.assert_called_once_with('test/create_packages_archive_root/module.py',
                                     'module.py')
 
+    def _assert_egginfo(self, add):
+        dst = 'package.egg-info'
+        src = os.path.realpath(os.path.join('test', 'create_packages_archive_root', dst))
+        add.assert_any_call(src, dst)
+
     def _assert_package(self, add):
         add.assert_any_call('test/create_packages_archive_root/package/__init__.py', 'package/__init__.py')
         add.assert_any_call('test/create_packages_archive_root/package/submodule.py', 'package/submodule.py')
@@ -280,14 +286,15 @@ class CreatePackagesArchive(unittest.TestCase):
         add.assert_any_call('test/create_packages_archive_root/package/submodule_without_imports.py', 'package/submodule_without_imports.py')
         add.assert_any_call('test/create_packages_archive_root/package/subpackage/__init__.py', 'package/subpackage/__init__.py')
         add.assert_any_call('test/create_packages_archive_root/package/subpackage/submodule.py', 'package/subpackage/submodule.py')
-        add.assert_any_call('test/create_packages_archive_root/package.egg-info/top_level.txt', 'package.egg-info/top_level.txt')
-        assert add.call_count == 7
+        self._assert_egginfo(add)
+        self.assertEquals(add.call_count, 7)
 
     def _assert_package_subpackage(self, add):
         add.assert_any_call('test/create_packages_archive_root/package/__init__.py', 'package/__init__.py')
         add.assert_any_call('test/create_packages_archive_root/package/subpackage/__init__.py', 'package/subpackage/__init__.py')
         add.assert_any_call('test/create_packages_archive_root/package/subpackage/submodule.py', 'package/subpackage/submodule.py')
-        assert add.call_count == 3
+        self._assert_egginfo(add)
+        self.assertEquals(add.call_count, 4)
 
     @mock.patch('tarfile.open')
     def test_create_packages_archive_module(self, tar):

@@ -1,0 +1,17 @@
+../package/__init__.py
+../package/submodule.py
+../package/submodule_with_absolute_import.py
+../package/submodule_without_imports.py
+../package/subpackage/__init__.py
+../package/subpackage/submodule.py
+../package/__init__.pyc
+../package/submodule.pyc
+../package/submodule_with_absolute_import.pyc
+../package/submodule_without_imports.pyc
+../package/subpackage/__init__.pyc
+../package/subpackage/submodule.pyc
+./
+dependency_links.txt
+PKG-INFO
+SOURCES.txt
+top_level.txt
